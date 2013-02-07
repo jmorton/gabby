@@ -45,7 +45,6 @@
 (defn listen
   ([chat f]
     (let [handle (handler f)]
-      (say chat "Now listening...")
       (.addMessageListener chat handle)
       handle)))
 
