@@ -1,0 +1,6 @@
+{ :user     "your-user-name"
+  :pass     "your-password"
+  :host     "where-to-chief"
+  :port     5222
+  :domain   "not-sure-you-need-this... maybe"
+}

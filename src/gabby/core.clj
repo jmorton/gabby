@@ -25,14 +25,6 @@
     (.login conn user pass)
     conn))
 
-; This adds a "listening" function to one conversation.
-(defn listen
-  ([chat f]
-    (let [handle (handler f)]
-      (say chat "Now listening...")
-      (.addMessageListener chat handle)
-      handle)))
-
 ; Used by listen to build the object expected by Smack.
 (defn handler [reply]
   (proxy [MessageListener]
@@ -40,6 +32,22 @@
     (processMessage [chat, message]
       ; working with the message like a value, not a java object.
       (reply chat (bean message)))))
+
+; Send a message to a person.  This only works with a chat
+; object right now.  It would be nice if it turns a string
+; into a chat object.
+(defn say [chat s]
+  (let [msg (Message.)]
+    (.setBody msg (str s))
+    (.sendMessage chat msg)))
+
+; This adds a "listening" function to one conversation.
+(defn listen
+  ([chat f]
+    (let [handle (handler f)]
+      (say chat "Now listening...")
+      (.addMessageListener chat handle)
+      handle)))
 
 ; Tracks a conversation participant and an object
 ; for interacting with them.
@@ -51,11 +59,8 @@
   (let [mngr (.getChatManager conn)
         chat (.createChat mngr someone nil)
         ch   (bean chat)]
-    (swap! chats assoc (:participant ch) chat)))
-
-; Useful for handling conversations initiated by others.
-(defn chat-started [conn f]
-  (-> (.getChatManager conn) (.addChatListener (chat-handler f))))
+    (swap! chats assoc (:participant ch) chat)
+    chat))
 
 ; Produces a proxy for reacting to chats initiated by others.
 ; This could be a "private" function.
@@ -67,13 +72,9 @@
         (listen chat f)
         (swap! chats assoc (:participant ch) chat)))))
 
-; Send a message to a person.  This only works with a chat
-; object right now.  It would be nice if it turns a string
-; into a chat object.
-(defn say [chat s]
-  (let [msg (Message.)]
-    (.setBody msg (str s))
-    (.sendMessage chat msg)))
+; Useful for handling conversations initiated by others.
+(defn chat-started [conn f]
+  (-> (.getChatManager conn) (.addChatListener (chat-handler f))))
 
 ; Change presence.
 (defn available [conn msg]
