@@ -14,7 +14,7 @@
 
 ; These are shared between everyone that wants to get notified.
 ; I'm not sure if this is proper or not...
-(def conn (atom (rmq/connect)))
+(def conn (atom (rmq/connect amqp-credentials)))
 (def chan (atom (lch/open @conn)))
 (def bot (g/authenticate xmpp-credentials))
 
@@ -31,13 +31,13 @@
     (g/say chat (String. payload "UTF-8"))))
 
 (defn subscribe [chat message]
-  (let [pattern #"subscribe: ([0-9a-z\.\-]+)/([0-9a-z\.\-\#]+)"
+  (let [pattern #"subscribe: ([0-9a-z\.\-\_]+)/([0-9a-z\.\-\_\#\*]+)"
         [match exchange routing-key] (re-matches pattern (:body message))]
     (cond
      (nil? match) (g/say chat "Sorry, I don't understand that, I'm new here.")
      :else (do
-             (start-consumer @chan "" "foo" "#" (handler chat message))
-             (g/say chat (str "I want to subscribe you to '" exchange "' with the key '" routing-key "'"))))))
+             (start-consumer @chan "" exchange routing-key (handler chat message))
+             (g/say chat (str "I subscribed you to '" exchange "' with the key '" routing-key "'"))))))
 
 ; not sure if this is the right way to set values or not...
 (defn live [])
@@ -48,9 +48,7 @@
   (rmq/close @chan)
   (rmq/close @conn))
 
-(g/chat-started bot subscribe)
-
-(defn -main [& args]
+(defn- main [& args]
 (let []
   (g/chat-started bot subscribe)
   (loop [] (Thread/sleep 1000) (recur))))
