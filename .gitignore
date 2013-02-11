@@ -8,4 +8,7 @@ pom.xml
 .lein-deps-sum
 .lein-failures
 .lein-plugins
+
+# CREDENTIALS... Don't commit these.
 config.clj
+amqp.clj
