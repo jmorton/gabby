@@ -1,5 +1,5 @@
 (defproject gabby "0.1.0-SNAPSHOT"
-  :description "FIXME: write description"
+  :description "Gabby (loves to chat) is an XMPP library for Clojure that stands on the shoulders of Smack."
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}

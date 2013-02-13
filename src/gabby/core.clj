@@ -1,7 +1,7 @@
 ;; ## Gabby (loves to chat)
 ;;
-;; She is an XMPP library for Clojure who stands on the shoulders of Smack,
-;; an Open Source XMPP (Jabber) client library.
+;; ...is an XMPP library for Clojure that stands on the shoulders of
+;; [Smack](http://www.igniterealtime.org/projects/smack/).
 
 (ns gabby.core
     { :author "Jon Morton" }
@@ -55,9 +55,9 @@
 ;; ## Say something...
 
 (defn say
-  "Creates and sends a message."
+  "Creates and sends a message.
+   Like all IO, not safe for use within a transaction."
   [conn to body]
-  ;; This is not safe to use inside of transactions because it is IO.
   (io!
    (let [msg (Message. to)]
      (.setType msg Message$Type/chat)
@@ -69,27 +69,29 @@
 ;; ## Hear something...
 
 (defn- listener
-  "Wraps `f` in a PacketListener."
+  "Wraps `f` in a PacketListener without applying it to the connection"
   [f]
   (reify PacketListener
     (processPacket [this packet]
       (f (bean packet)))))
 
 (defn listen
-  "Call `f` whenever a chat message is received."
+  "Call `f` whenever a chat message is received.  Returns the filter
+   in case you want to use it later to remove the packet listener...
+   even though that's not implemented right now."
   [conn f]
   (let [filter (MessageTypeFilter. Message$Type/chat)]
-    (.addPacketListener conn filter (listener f))))
+    (.addPacketListener conn filter (listener f))
+    filter))
 
 ;; ## Cherishing things once said...
-
 
 (defn- starts-with? [prefix str]
   "A utility function to keep subsequent code more readable."
   (= 0 (.indexOf str prefix)))
 
 (defn- to-or-from-filter
-  "Create a filter detecting messages sent either to or from
+  "Create a filter detecting messages sent to or from
    a specific party."
   [str]
   (reify PacketFilter
@@ -105,7 +107,6 @@
       (record bot \"jon.morton@gmail.com\" journal)
       ;; some message is sent or received...
       (->> @journal (filter :body) (map :body))
-
   "
   [conn recipient journal]
   (.addPacketListener conn
@@ -114,7 +115,7 @@
         (swap! journal conj msg)))
     (to-or-from-filter recipient)))
 
-;; # Farewell!
+;; ## Farewell!!
 
 (defn deauth
   "Close the connection."
