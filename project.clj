@@ -5,4 +5,5 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.4.0"]
                  [jivesoftware/smack "3.1.0"]
-                 [com.novemberain/langohr "1.0.0-beta9"]])
+                 [com.novemberain/langohr "1.0.0-beta9"]]
+  :plugins [[lein-marginalia "0.7.1"]])
