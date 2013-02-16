@@ -71,7 +71,11 @@
 (defn- listener
   "Wraps `f` in a PacketListener without applying it to the connection"
   [f]
-  (reify PacketListener
+  ; reify will not work here because .addPacketListener
+  ; expects an instance of PacketListener class.  Maybe
+  ; I'm missing something obvious that would let me use
+  ; reify anyway.
+  (proxy [PacketListener] []
     (processPacket [this packet]
       (f (bean packet)))))
 
@@ -80,9 +84,9 @@
    in case you want to use it later to remove the packet listener...
    even though that's not implemented right now."
   [conn f]
-  (let [filter (MessageTypeFilter. Message$Type/chat)]
-    (.addPacketListener conn filter (listener f))
-    filter))
+  (let [listen (listener f)
+        filter (MessageTypeFilter. Message$Type/chat)]
+    (.addPacketListener conn listen filter)))
 
 ;; ## Cherishing things once said...
 
