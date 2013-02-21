@@ -34,12 +34,19 @@
   (let [possible (count frequencies)])
   (reduce * (occurences sentence frequencies)))
 
+(defn count-words
+  [sentence]
+  (count (re-seq #"[\w\*\~]+" sentence)))
+
 (defn perplexity
   [sentences frequencies]
-  (let [sum-of-log-of-probability (reduce + (map #(log2 (probability % frequencies)) sentences))
-        word-count () ; TBD
-        entropy (/ sum-of-log-of-probability word-count)] ; this probably is a miss leading name.
-    (Math/pow 2 entropy)))
+  (let [log-probability (reduce + (map #(log2 (probability % frequencies)) sentences))
+        ; (count sentences) virtually adds the extra "stop" word to each sentence
+        ; in order to follow a common peplexity model.
+        vocabulary-size (+ (reduce + (map count-words sentences)) (count sentences))
+        average (/ log-probability vocabulary-size)]
+    (println [log-probability vocabulary-size])
+    (Math/pow 2 (- average))))
 
 (defn occuring
   [frequencies x y]

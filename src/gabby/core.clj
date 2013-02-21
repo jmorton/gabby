@@ -76,7 +76,7 @@
   ; I'm missing something obvious that would let me use
   ; reify anyway.
   (proxy [PacketListener] []
-    (processPacket [this packet]
+    (processPacket [packet]
       (f (bean packet)))))
 
 (defn listen
