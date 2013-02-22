@@ -9,92 +9,105 @@
             [langohr.consumers  :as lhc]
             [langohr.basic      :as lhb]))
 
-; I'm still learning how to structure programs in Clojure...
+(defprotocol Chatter
+  (chat [this] [this msg]))
 
-{ "to" { :queue nil :channel nil, :bindings [],  } }
+(defprotocol Watcher
+  (watch [this] [this exchange] [this exchange routing-key])
+  (unwatch [this] [this exchange] [this exchange routing-key]))
 
-(defn create-queue
-  "Creates a queue, and nothing else."
-  [channel]
+(defrecord Session [id xmpp-conn amqp-chan amqp-queue]
+  Chatter
+  (chat [this msg]
+    (g/say xmpp-conn id msg))
+  Watcher
+  (watch [this exchange]
+    (lhq/bind amqp-chan (.getQueue amqp-queue) exchange))
+  (unwatch [this exchange]
+    (lhq/bind amqp-chan (.getQueue amqp-queue) exchange)
+    (lhq/unbind amqp-chan (.getQueue amqp-queue) exchange "#")))
+
+(defn create-relay
+  "Turns AMQP messages into an XMPP message"
+  [session]
+  (fn [amqp-chan metadata ^bytes payload]
+    (chat session (String. payload "UTF-8"))))
+
+(defn find-session [sessions packet]
+  (find @sessions (:from packet)))
+
+(defn create-session
+  "Creates a session and adds it to sessions."
+  [sessions packet xmpp amqp]
+  (let [channel  (lch/open amqp)
+        queue    (lhq/declare channel)
+        session  (Session. (:from packet) xmpp channel queue)
+        relay    (create-relay session)]
+    (lhc/subscribe channel (.getQueue queue) relay :auto-ack true)
+    (swap! sessions assoc (:from packet) session)))
+
+(defn extract-exchange [str]
+  (last (re-matches #"^bind: ([a-z0-9\/\.\-]+)$" str)))
+
+(defn bind-handler
+  [session packet]
+  (io!
+   (if-let [exchange (extract-exchange (:body packet))]
+     (do (watch session exchange)
+         (chat session (str "Binding to " exchange)))))
+  [session packet])
+
+(defn unbind-handler
+  [session packet]
+  (io!
+   (if-let [exchange (last
+                      (re-matches
+                       #"^unbind: ([a-z0-9\/\.\-]+)$"
+                       (:body packet)))]
+     (do (unwatch session exchange)
+         (chat session "Unbinding"))))
+  [session packet])
+
+(defn help-handler
+  [session packet]
+  (io!
+   (if-let [match (re-seq #"^help$" (:body packet))]
+     (chat session "I'd like to help...")))
+  [session packet])
+
+(defn route [sessions packet & {:keys [xmpp amqp]}]
   (try
-    (lhq/declare channel "" :exclusive true :auto-delete true)
+    (let [[key session] (or (find-session sessions packet)
+                            (create-session sessions packet xmpp amqp))]
+      (println key)
+      (->> [session packet]
+           (apply bind-handler)
+           (apply unbind-handler)
+           (apply help-handler)))
     (catch Exception e
       (println (.getMessage e)))))
 
-(defn subscribe
-  "Creates a binding and subscribes a callback function"
-  [channel queue exchange route-key f]
-  (let [queue-name (.getQueue queue)]
-    (lhq/bind channel queue-name exchange :routing-key route-key)
-    (lhc/subscribe channel queue-name f :auto-ack true)))
+(defn start [amqp-conf xmpp-conf]
+  (let [amqp (lhcore/connect amqp-conf)
+        xmpp (g/auth xmpp-conf)
+        sessions (atom {})]
+    (g/listen xmpp (fn [packet]
+                     (route sessions packet :amqp amqp :xmpp xmpp)))
+    [amqp xmpp sessions]))
 
-(defn create-generic-relay [from to]
-  "Returns a function for turning AMQP messages into an XMPP message."
-  (fn [ch metadata ^bytes payload]
-    (g/say from to (String. payload "UTF-8"))))
+(defn stop [r]
+  (let [[amqp xmpp sessions] r]
+    (lhcore/close amqp)
+    (g/deauth xmpp)
+    (swap! sessions {})))
 
-(defn handle-bind [from message channel relays]
-  "Process a message from an XMPP user.  If it 'understands' what someone
-   wants, then it will create a queue with a generic relay to notify them
-   when AMQP messages are being received."
-  (let [to (:from message)
-        pattern #"^bind: ([0-9a-z\.\-\_]+)/([0-9a-z\.\-\_\#\*]+)"
-        [match exchange routing-key] (re-matches pattern (:body message))
-        queue (or (get @relays to) (create-queue channel))] ; has side effect
-    (try
-      (send relays assoc to queue) ; avoid logic about when to append... good idea?
-      (if match
-        (let [res (subscribe channel queue exchange routing-key (create-generic-relay from to))]
-          (g/say from to (str "You've been subscribed to " exchange " '" routing-key "'"))))
-      (catch Exception e
-        (g/say from to (str "Errorish: " e))))))
-
-(defn handle-unbind [from message channel relays]
-  (let [to (:from message)
-        queue (@relays to)
-        queue-name (.getQueue queue)
-        pattern #"^unbind: ([0-9a-z\.\-\_]+)/([0-9a-z\.\-\_\#\*]+)"
-        [match exchange route-key] (re-matches pattern (:body message))]
-    ;; if someone attempts to unbind from something they are not bound to
-    ;; this tears down the connection... and everyone else's queues along
-    ;; with it.
-    (try
-      (if match (do
-        (lhq/bind channel queue-name exchange :routing-key route-key)
-        (lhq/unbind channel queue-name exchange route-key)
-        (g/say from to (str "Unsubscribe from " exchange " + " route-key))))
-      (catch Exception e
-        (g/say from to (str "Errorish: " e))))))
-
-(defn handle-info [from message channel relays]
-    (let [to (:from message)
-          match (re-matches #"^info$" (:body message))]
-      (try
-        (if match
-          (g/say from to (str "info: " (@relays to))))
-        (catch Exception e
-          (g/say from to (.getMessage e))))))
-
-(defn start [rabbit-cfg xmpp-cfg]
-  (let [connection (lhcore/connect rabbit-cfg)
-        bot (g/auth xmpp-cfg)
-        relays (agent {})
-        channel (lch/open connection)
-        res { :bot bot :conn connection, :relays relays }]
-    (g/listen bot (fn [packet]
-                    (handle-bind bot packet channel relays)
-                    (handle-unbind bot packet channel relays)
-                    (handle-info bot packet channel relays)))
-    res))
-
-(defn cleanup [cfg]
-  (g/deauth (:bot cfg))
-  (lhcore/close (:conn cfg)))
-
-
-; (defn demo [] (def a (start (merge lhcore/*default-config* (read-string (slurp "amqp.clj"))) (read-string (slurp "config.clj")))))
+; (def ac (merge lhcore/*default-config* (read-string (slurp "amqp.clj"))))
+; (def xc (read-string (slurp "config.clj")))
+(def r (start ac xc))
+(stop r)
 
 (defn main [& args]
-  (start (merge lhcore/*default-config* (read-string (slurp "amqp.clj")))
-         (read-string (slurp "config.clj")))
+  (let [amqp-config (merge lhcore/*default-config* (read-string (slurp "amqp.clj")))
+        xmpp-config (read-string (slurp "config.clj"))]
+    (start xmpp-config amqp-config))
   (loop [] (Thread/sleep 10000) (recur)))
