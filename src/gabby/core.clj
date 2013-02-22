@@ -12,6 +12,8 @@
            [org.jivesoftware.smack.filter
             MessageTypeFilter PacketFilter]))
 
+(def ^:dynamic *default-config* {})
+
 ;; Although Gabby is addicted to Smack, she hides it pretty well.
 
 ;; ## Connecting to a server
