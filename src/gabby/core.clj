@@ -123,7 +123,7 @@
 
 ;; ## Farewell!!
 
-(defn deauth
+(defn close
   "Close the connection."
   [conn]
   (.disconnect conn))

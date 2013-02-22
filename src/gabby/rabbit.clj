@@ -11,9 +11,11 @@
             [clojure.stacktrace :as st]))
 
 (defprotocol Chatter
+  "Yes, you can send an XMPP message."
   (chat [this] [this msg]))
 
 (defprotocol Watcher
+  "Yes, you can watch (or unwatch) an exchange."
   (watch [this] [this exchange] [this exchange routing-key])
   (unwatch [this] [this exchange] [this exchange routing-key]))
 
@@ -35,10 +37,15 @@
     (chat session (String. payload "UTF-8"))))
 
 (defn find-session [sessions packet]
+  "Retrive something that exists corresponding to identifying
+   information in the packet: who sent the message."
   (find @sessions (:from packet)))
 
 (defn create-session
-  "Creates a session and adds it to sessions."
+  "Establishes an AMQP queue and channel.  A queue may be bound
+   to multiple exchanges.  A dedicated channel isolates errors to
+   a single person.  If shared, one person could interrupt channels
+   used by other people!"
   [sessions packet xmpp amqp]
   (let [channel  (lch/open amqp)
         queue    (lhq/declare channel (:from packet))
@@ -47,37 +54,45 @@
     (lhc/subscribe channel (.getQueue queue) relay :auto-ack true)
     (swap! sessions assoc (:from packet) session)))
 
-(defn extract-exchange [str]
-  (last (re-matches #"^bind: ([a-z0-9\/\.\-\_]+)$" str)))
-
 (defn bind-handler
+  "Bind the queue corresponding to the session to the specified
+   exchange.  Return `[session packet]` so that the handler can
+   be chained (this might be a dumb idea)."
   [session packet]
   (io!
-   (if-let [exchange (extract-exchange (:body packet))]
+   (if-let [exchange (last (re-matches #"^bind: ([a-z0-9\/\.\-\_]+)$" (:body packet)))]
      (do (watch session exchange)
          (chat session (str "Binding to " exchange)))))
   [session packet])
 
 (defn unbind-handler
+  "Unbind a queue and exchange so that a person no longer has
+   messages relayed for that binding."
   [session packet]
   (io!
    (if-let [exchange (last (re-matches #"^unbind: ([a-z0-9\/\.\-\_]+)$" (:body packet)))]
      (do (unwatch session exchange)
-         (chat session "Unbinding"))))
+         (chat session (str "Unbinding from " exchange)))))
   [session packet])
 
 (defn help-handler
+  "I'd like to help, but I don't know how yet.  This should tell people
+   how to bind and unbind."
   [session packet]
   (io!
    (if-let [match (re-seq #"^help$" (:body packet))]
      (chat session "I'd like to help...")))
   [session packet])
 
-(defn route [sessions packet & {:keys [xmpp amqp]}]
+(defn route
+  "Use the packet to find or create a session and then apply
+   handling functions to the message.  This evaluates all
+   functions, not just the best one!  In the future, maybe
+   metadata can be used to pick the most appropriate one..."
+  [sessions packet & {:keys [xmpp amqp]}]
   (try
     (let [session (val (or (find-session sessions packet)
                            (create-session sessions packet xmpp amqp)))]
-      (println session)
       (->> [session packet]
            (apply bind-handler)
            (apply unbind-handler)
@@ -85,6 +100,8 @@
     (catch Exception e (clojure.stacktrace/print-stack-trace e))))
 
 (defn start [amqp-conf xmpp-conf]
+  "Connect to the XMPP and AMQP servers, and create a session map
+   to keep track of people that have talked to the system."
   (let [amqp (lhcore/connect amqp-conf)
         xmpp (g/auth xmpp-conf)
         sessions (atom {})]
@@ -92,11 +109,11 @@
                      (route sessions packet :amqp amqp :xmpp xmpp)))
     [amqp xmpp sessions]))
 
-(defn stop [r]
-  (let [[amqp xmpp sessions] r]
-    (lhcore/close amqp)
-    (g/deauth xmpp)
-    (swap! sessions {})))
+(defn stop [amqp-conn xmpp-conn & more]
+  "Close the XMPP and AMQP connections.  Channels will disconnect
+   automatically."
+  (lhcore/close amqp-conn)
+  (g/close xmpp-conn))
 
 (defn main [& args]
   (let [amqp-config (merge lhcore/*default-config*
