@@ -10,5 +10,5 @@ pom.xml
 .lein-plugins
 
 # CREDENTIALS... Don't commit these.
-config.clj
+xmpp.clj
 amqp.clj
