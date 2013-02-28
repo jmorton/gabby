@@ -117,6 +117,7 @@
   (g/close xmpp-conn))
 
 (defn -main [& args]
+  (println "Starting Gabby+Rabbit")
   (let [amqp-config (merge lhcore/*default-config*
                            (read-string (slurp "config/amqp.clj")))
         xmpp-config (merge g/*default-config*
