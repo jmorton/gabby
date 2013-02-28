@@ -34,6 +34,7 @@
   "Turns AMQP messages into an XMPP message"
   [session]
   (fn [amqp-chan metadata ^bytes payload]
+    (chat session (str metadata))
     (chat session (String. payload "UTF-8"))))
 
 (defn find-session [sessions packet]
@@ -115,10 +116,18 @@
   (lhcore/close amqp-conn)
   (g/close xmpp-conn))
 
-(defn main [& args]
+(defn -main [& args]
   (let [amqp-config (merge lhcore/*default-config*
                            (read-string (slurp "config/amqp.clj")))
         xmpp-config (merge g/*default-config*
                            (read-string (slurp "config/xmpp.clj")))]
     (start amqp-config xmpp-config))
   (loop [] (Thread/sleep 10000) (recur)))
+
+
+; let there be something like a command...
+; this is a function that does something...
+; but it requires certain input and maybe confirmation...
+; the command has some example (prototypical) input
+; all commands can be cancelled with a certain phrase
+; commands can require confirmation
