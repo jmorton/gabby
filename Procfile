@@ -1,1 +1,2 @@
-worker: lein run -m gabby.rabbit/-main
+worker: lein run -m gabby.core/-main
+

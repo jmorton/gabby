@@ -1,14 +1,14 @@
 (ns gabby.rabbit
   "Bridge between XMPP and AMQP.  Intended for observation (read) only."
   (:gen-class)
-  (:use [gabby.core             :as g])
   (:require [langohr.core       :as lhcore]
             [langohr.channel    :as lch]
             [langohr.queue      :as lhq]
             [langohr.exchange   :as lhe]
             [langohr.consumers  :as lhc]
             [langohr.basic      :as lhb]
-            [clojure.stacktrace :as st]))
+            [clojure.stacktrace :as st]
+            [gabby.jabber       :as jabber]))
 
 (defprotocol Chatter
   "Yes, you can send an XMPP message."
@@ -22,7 +22,7 @@
 (defrecord Session [id xmpp-conn amqp-chan amqp-queue]
   Chatter
   (chat [this msg]
-    (g/say xmpp-conn id msg))
+    (jabber/say xmpp-conn id msg))
   Watcher
   (watch [this exchange]
     (lhq/bind amqp-chan (.getQueue amqp-queue) exchange :routing-key "#"))
@@ -100,35 +100,7 @@
            (apply help-handler)))
     (catch Exception e (clojure.stacktrace/print-stack-trace e))))
 
-(defn start [amqp-conf xmpp-conf]
-  "Connect to the XMPP and AMQP servers, and create a session map
-   to keep track of people that have talked to the system."
-  (let [amqp (lhcore/connect amqp-conf)
-        xmpp (g/auth xmpp-conf)
-        sessions (atom {})]
-    (g/listen xmpp (fn [packet]
-                     (route sessions packet :amqp amqp :xmpp xmpp)))
-    [amqp xmpp sessions]))
+(defn connect [conf]
+  (lhcore/connect conf))
 
-(defn stop [amqp-conn xmpp-conn & more]
-  "Close the XMPP and AMQP connections.  Channels will disconnect
-   automatically."
-  (lhcore/close amqp-conn)
-  (g/close xmpp-conn))
-
-(defn -main [& args]
-  (println "Starting Gabby+Rabbit")
-  (let [amqp-config (merge lhcore/*default-config*
-                           (read-string (slurp "config/amqp.clj")))
-        xmpp-config (merge g/*default-config*
-                           (read-string (slurp "config/xmpp.clj")))]
-    (start amqp-config xmpp-config))
-  (loop [] (Thread/sleep 10000) (recur)))
-
-
-; let there be something like a command...
-; this is a function that does something...
-; but it requires certain input and maybe confirmation...
-; the command has some example (prototypical) input
-; all commands can be cancelled with a certain phrase
-; commands can require confirmation
+(def ^:dynamic *default-config* lhcore/*default-config*)
