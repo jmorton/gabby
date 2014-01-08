@@ -1,5 +1,5 @@
 (ns gabby.rabbit
-  "Bridge between XMPP and AMQP.  Intended for observation (read) only."
+  "AMQP related functions"
   (:gen-class)
   (:require [langohr.core       :as lhcore]
             [langohr.channel    :as lch]
@@ -8,6 +8,7 @@
             [langohr.consumers  :as lhc]
             [langohr.basic      :as lhb]
             [clojure.stacktrace :as st]
+            [clojure.tools.logging :as log]
             [gabby.jabber       :as jabber]))
 
 (defprotocol Chatter
@@ -33,6 +34,7 @@
 (defn create-relay
   "Turns AMQP messages into an XMPP message"
   [session]
+  (log/debug "creating a relay")
   (fn [amqp-chan metadata ^bytes payload]
     (chat session (str metadata))
     (chat session (String. payload "UTF-8"))))
@@ -40,6 +42,7 @@
 (defn find-session [sessions packet]
   "Retrive something that exists corresponding to identifying
    information in the packet: who sent the message."
+  (log/debug "finding session")
   (find @sessions (:from packet)))
 
 (defn create-session
@@ -48,6 +51,7 @@
    a single person.  If shared, one person could interrupt channels
    used by other people!"
   [sessions packet xmpp amqp]
+  (log/debug "creating session for the user")
   (let [channel  (lch/open amqp)
         queue    (lhq/declare channel (:from packet))
         session  (Session. (:from packet) xmpp channel queue)
@@ -60,6 +64,7 @@
    exchange.  Return `[session packet]` so that the handler can
    be chained (this might be a dumb idea)."
   [session packet]
+  (log/debug "binding queue from an exchange")
   (io!
    (if-let [exchange (last (re-matches #"^bind: ([a-z0-9\/\.\-\_]+)$" (:body packet)))]
      (do (watch session exchange)
@@ -70,6 +75,7 @@
   "Unbind a queue and exchange so that a person no longer has
    messages relayed for that binding."
   [session packet]
+  (log/debug "unbinding queue from an exchange")
   (io!
    (if-let [exchange (last (re-matches #"^unbind: ([a-z0-9\/\.\-\_]+)$" (:body packet)))]
      (do (unwatch session exchange)
@@ -80,6 +86,7 @@
   "I'd like to help, but I don't know how yet.  This should tell people
    how to bind and unbind."
   [session packet]
+  (log/debug "sending help message")
   (io!
    (if-let [match (re-seq #"^help$" (:body packet))]
      (chat session "I'd like to help...")))
@@ -91,6 +98,7 @@
    functions, not just the best one!  In the future, maybe
    metadata can be used to pick the most appropriate one..."
   [sessions packet & {:keys [xmpp amqp]}]
+  (log/debug "routing packet ")
   (try
     (let [session (val (or (find-session sessions packet)
                            (create-session sessions packet xmpp amqp)))]
@@ -101,6 +109,11 @@
     (catch Exception e (clojure.stacktrace/print-stack-trace e))))
 
 (defn connect [conf]
+  (log/debug "connecting to rabbitmq")
   (lhcore/connect conf))
+
+(defn close [conn]
+  (log/debug "disconnecting from rabbitmq")
+  (lhcore/close conn))
 
 (def ^:dynamic *default-config* lhcore/*default-config*)

@@ -6,17 +6,13 @@
 (ns gabby.core
     { :author "Jon Morton" }
   (:require [gabby.jabber :as jabber]
-        [gabby.rabbit :as rabbit])
-  (:import [org.jivesoftware.smack
-            ConnectionConfiguration PacketListener XMPPConnection]
-           [org.jivesoftware.smack.packet
-            Message Message$Type Packet Presence Presence$Mode Presence$Type]
-           [org.jivesoftware.smack.filter
-            MessageTypeFilter PacketFilter]))
+            [gabby.rabbit :as rabbit]
+            [clojure.tools.logging :as log]))
 
 (defn start [amqp-conf xmpp-conf]
   "Connect to the XMPP and AMQP servers, and create a session map
    to keep track of people that have talked to the system."
+  (log/info "Starting Gabby+Rabbit")
   (let [amqp (rabbit/connect amqp-conf)
         xmpp (jabber/auth xmpp-conf)
         sessions (atom {})]
@@ -27,11 +23,11 @@
 (defn stop [amqp-conn xmpp-conn & more]
   "Close the XMPP and AMQP connections.  Channels will disconnect
    automatically."
-  ;(rabbit/close amqp-conn)
+  (log/info "Stopping Gabby+Rabbit")
+  (rabbit/close amqp-conn)
   (jabber/close xmpp-conn))
 
 (defn -main [& args]
-  (println "Starting Gabby+Rabbit")
   (let [amqp-config (merge rabbit/*default-config*
                            (read-string (slurp "config/amqp.clj")))
         xmpp-config (merge jabber/*default-config*
